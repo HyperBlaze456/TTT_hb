@@ -1,0 +1,1 @@
+from .fa import flash_attention
