@@ -12,7 +12,6 @@ from __future__ import annotations
 import enum
 import math
 from dataclasses import dataclass
-from functools import partial
 from typing import Callable
 
 import jax
@@ -547,7 +546,7 @@ class Gemma3Block(nnx.Module):
         self.config = config
         self.layer_idx = layer_idx
 
-        # Pre-attention norm
+        # Prenorm pattern
         self.input_layernorm = RMSNorm(
             num_features=config.hidden_size,
             eps=config.rms_norm_eps,
@@ -591,7 +590,6 @@ class Gemma3Block(nnx.Module):
         else:
             self.pre_feedforward_layernorm = None
 
-        # MLP
         self.mlp = Gemma3MLP(config, mesh=mesh, rngs=rngs)
 
         # Post-FFW norm (Gemma 3 specific)
@@ -687,7 +685,6 @@ class Gemma3Model(nnx.Module):
             scaling_factor=config.rope_scaling_factor,
         )
 
-        # Transformer layers
         self.layers = []
         for layer_idx in range(config.num_hidden_layers):
             layer = Gemma3Block(
@@ -728,7 +725,6 @@ class Gemma3Model(nnx.Module):
             seq_len = input_ids.shape[1]
             position_ids = jnp.arange(seq_len)[None, :]
 
-        # Process through layers
         for layer_idx, layer in enumerate(self.layers):
             attn_type = self.config.get_attention_type(layer_idx)
             if attn_type == AttentionType.LOCAL_SLIDING:
