@@ -297,7 +297,7 @@ def main() -> None:
         if data_axis is not None and args.batch % mesh.shape[data_axis] == 0:
             input_ids = jax.device_put(input_ids, NamedSharding(mesh, P(data_axis, None)))
         else:
-            # Replicate if we can'tg shard the batch dimension cleanly.
+            # Replicate if we can't shard the batch dimension cleanly.
             input_ids = jax.device_put(input_ids, NamedSharding(mesh, P()))
 
     def forward(m, x):

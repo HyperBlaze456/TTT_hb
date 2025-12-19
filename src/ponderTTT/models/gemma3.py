@@ -685,15 +685,8 @@ class Gemma3Model(nnx.Module):
             scaling_factor=config.rope_scaling_factor,
         )
 
-        self.layers = []
-        for layer_idx in range(config.num_hidden_layers):
-            layer = Gemma3Block(
-                config,
-                layer_idx,
-                mesh=mesh,
-                rngs=rngs,
-            )
-            self.layers.append(layer)
+        self.layers = nnx.List([Gemma3Block(config, layer_idx, mesh=mesh, rngs=rngs)
+                       for layer_idx in range(config.num_hidden_layers)])
 
         # Final normalization
         self.norm = RMSNorm(
