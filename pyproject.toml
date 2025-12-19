@@ -8,3 +8,6 @@ dependencies = [
     "flax>=0.12.2",
     "jax[tpu]>=0.8.2"
 ]
+
+[project.optional-dependencies]
+kaggle = ["kagglehub>=0.3.0"]

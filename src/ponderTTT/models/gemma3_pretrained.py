@@ -18,9 +18,22 @@ Example:
 
   logits = model(jnp.zeros((1, 16), dtype=jnp.int32))
   ```
+
+For downloading from Kaggle:
+  ```
+  from ponderTTT.models import download_gemma3_from_kaggle
+
+  checkpoint_path = download_gemma3_from_kaggle(
+      handle="google/gemma-3/flax/gemma3-4b-it",
+      force_download=False,
+  )
+  load_gemma3_weights_from_checkpoint(model, checkpoint_path)
+  ```
 """
 
+import os
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
 import jax
@@ -29,6 +42,112 @@ from flax import nnx
 
 from .checkpoint import load_checkpoint_tensors
 from .gemma3 import Gemma3ForCausalLM, Gemma3Model
+
+
+DEFAULT_CHECKPOINT_PATTERNS = (
+    "**/*flax_model.msgpack",
+    "**/*.msgpack",
+    "**/*.msg",
+    "**/*.npz",
+)
+
+
+def _resolve_checkpoint(
+    weights_dir: str | Path,
+    patterns: Iterable[str] = DEFAULT_CHECKPOINT_PATTERNS,
+) -> Path:
+    """Find a checkpoint file in the given directory using glob patterns.
+
+    Args:
+        weights_dir: Directory to search for checkpoint files.
+        patterns: Glob patterns to match checkpoint files.
+
+    Returns:
+        Path to the found checkpoint file.
+
+    Raises:
+        FileNotFoundError: If no checkpoint is found.
+        RuntimeError: If multiple candidates are found.
+    """
+    weights_dir = Path(weights_dir)
+    matches: list[Path] = []
+    for pat in patterns:
+        matches.extend([p for p in weights_dir.glob(pat) if p.is_file()])
+    matches = sorted(set(matches))
+
+    if not matches:
+        raise FileNotFoundError(
+            f"No checkpoint found under {weights_dir} with patterns: {list(patterns)}"
+        )
+    if len(matches) > 1:
+        joined = "\n".join(str(p) for p in matches[:20])
+        raise RuntimeError(
+            "Multiple candidate checkpoints found; specify the exact path.\n"
+            f"First matches:\n{joined}"
+        )
+    return matches[0]
+
+
+def download_gemma3_from_kaggle(
+    handle: str,
+    *,
+    kind: str = "model",
+    path: str | None = None,
+    force_download: bool = False,
+    checkpoint_patterns: Iterable[str] = DEFAULT_CHECKPOINT_PATTERNS,
+) -> str:
+    """Download Gemma3 weights from Kaggle using kagglehub.
+
+    Authentication is handled via the KAGGLE_API_TOKEN environment variable,
+    or through kagglehub's other authentication methods (token file, interactive login).
+
+    Args:
+        handle: Kaggle handle for the model or dataset.
+            - For models: "owner/model/framework/variation" or with version "owner/model/framework/variation/N"
+            - For datasets: "owner/dataset" or with version "owner/dataset/versions/N"
+        kind: Either "model" or "dataset".
+        path: Optional specific file to download within the model/dataset.
+        force_download: If True, re-download even if already cached.
+        checkpoint_patterns: Glob patterns to locate the checkpoint file in the downloaded directory.
+
+    Returns:
+        Path to the checkpoint file.
+
+    Raises:
+        ImportError: If kagglehub is not installed.
+        ValueError: If kind is not "model" or "dataset".
+        FileNotFoundError: If no checkpoint is found in the downloaded directory.
+    """
+    try:
+        import kagglehub
+    except ImportError as e:
+        raise ImportError(
+            "kagglehub is required for downloading from Kaggle. "
+            "Install it with: pip install kagglehub"
+        ) from e
+
+    if kind == "model":
+        download_dir = kagglehub.model_download(
+            handle,
+            path=path,
+            force_download=force_download,
+        )
+    elif kind == "dataset":
+        download_dir = kagglehub.dataset_download(
+            handle,
+            path=path,
+            force_download=force_download,
+        )
+    else:
+        raise ValueError(f"kind must be 'model' or 'dataset', got {kind!r}")
+
+    download_path = Path(download_dir)
+
+    if download_path.is_file():
+        return str(download_path)
+
+    checkpoint_path = _resolve_checkpoint(download_path, checkpoint_patterns)
+    return str(checkpoint_path)
 
 
 def _find_unique_suffix(tensors: dict[str, Any], suffix: str) -> str | None:

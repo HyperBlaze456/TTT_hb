@@ -17,6 +17,7 @@ from .ttt import TTTConfig, TTTGemma3Model
 
 from .checkpoint import load_checkpoint_tensors
 from .gemma3_pretrained import (
+    download_gemma3_from_kaggle,
     load_gemma3_backbone_weights,
     load_gemma3_weights_from_checkpoint,
 )

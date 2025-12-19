@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -74,92 +72,6 @@ def _parse_mesh(mesh_str: str | None, *, devices: list[object]):
     return Mesh(mesh_devices, axis_names)
 
 
-def _run_checked(cmd: list[str], *, cwd: Path | None = None) -> None:
-    subprocess.run(cmd, cwd=cwd, check=True)
-
-
-def _kaggle_download(
-    *,
-    kind: str,
-    handle: str,
-    out_dir: Path,
-    file: str | None,
-    force: bool,
-) -> None:
-    if shutil.which("kaggle") is None:
-        raise RuntimeError(
-            "kaggle CLI not found on PATH. Install it and configure credentials, or pass --checkpoint."
-        )
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    attempts: list[list[str]] = []
-    if kind == "datasets":
-        cmd = ["kaggle", "datasets", "download", "-d", handle, "-p", str(out_dir)]
-        if force:
-            cmd.append("--force")
-        if file:
-            cmd.extend(["-f", file])
-        attempts.append(cmd)
-    elif kind == "models":
-        # Kaggle CLI model-download syntax has evolved; try a couple variants.
-        cmd1 = ["kaggle", "models", "download", handle, "-p", str(out_dir)]
-        if force:
-            cmd1.append("--force")
-        if file:
-            cmd1.extend(["-f", file])
-        attempts.append(cmd1)
-
-        cmd2 = ["kaggle", "models", "instances", "versions", "download", "-m", handle, "-p", str(out_dir)]
-        if force:
-            cmd2.append("--force")
-        if file:
-            cmd2.extend(["-f", file])
-        attempts.append(cmd2)
-    else:
-        raise ValueError(f"Unsupported Kaggle kind: {kind!r}")
-
-    last: subprocess.CompletedProcess[str] | None = None
-    for cmd in attempts:
-        last = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        if last.returncode == 0:
-            return
-
-    assert last is not None
-    raise RuntimeError(
-        "Kaggle download failed. Last attempt output:\n"
-        f"{last.stdout}\n"
-        "Tip: if you already downloaded weights, pass --checkpoint to the local .msgpack/.npz file."
-    )
-
-
-def _maybe_extract_archives(out_dir: Path) -> None:
-    # Kaggle often downloads .zip bundles.
-    for zip_path in out_dir.glob("*.zip"):
-        import zipfile
-
-        with zipfile.ZipFile(zip_path) as zf:
-            zf.extractall(out_dir)
-
-
-def _resolve_checkpoint(weights_dir: Path, patterns: list[str]) -> Path:
-    matches: list[Path] = []
-    for pat in patterns:
-        matches.extend([p for p in weights_dir.glob(pat) if p.is_file()])
-    matches = sorted(set(matches))
-    if not matches:
-        raise FileNotFoundError(
-            f"No checkpoint found under {weights_dir} with patterns: {patterns}"
-        )
-    if len(matches) > 1:
-        joined = "\n".join(str(p) for p in matches[:20])
-        raise RuntimeError(
-            "Multiple candidate checkpoints found; pass --checkpoint to disambiguate.\n"
-            f"First matches:\n{joined}"
-        )
-    return matches[0]
-
-
 def _parse_prompt_ids(prompt_ids: str | None, *, batch: int, seq_len: int, seed: int):
     import jax.numpy as jnp
 
@@ -183,17 +95,10 @@ def main() -> None:
     )
     parser.add_argument("--checkpoint", type=str, default=None, help="Path to .msgpack/.msg/.npz")
 
-    parser.add_argument("--kaggle-model", type=str, default=None, help="Kaggle model handle")
-    parser.add_argument("--kaggle-dataset", type=str, default=None, help="Kaggle dataset handle")
-    parser.add_argument("--kaggle-file", type=str, default=None, help="Specific file to download")
-    parser.add_argument("--weights-dir", type=str, default="weights/gemma3", help="Where to download/extract")
+    parser.add_argument("--kaggle-model", type=str, default=None, help="Kaggle model handle (e.g. google/gemma-3/flax/gemma3-4b-it)")
+    parser.add_argument("--kaggle-dataset", type=str, default=None, help="Kaggle dataset handle (e.g. owner/dataset)")
+    parser.add_argument("--kaggle-file", type=str, default=None, help="Specific file to download from model/dataset")
     parser.add_argument("--force-download", action="store_true", help="Force Kaggle re-download")
-    parser.add_argument(
-        "--checkpoint-glob",
-        type=str,
-        default="**/*flax_model.msgpack,**/*.msgpack,**/*.msg,**/*.npz",
-        help="Comma-separated glob patterns used to locate a checkpoint under --weights-dir",
-    )
 
     parser.add_argument("--size", type=str, default="4b", choices=["1b", "4b", "12b", "27b"])
     parser.add_argument("--adapter-dim", type=int, default=256)
@@ -217,28 +122,30 @@ def main() -> None:
 
     _ensure_src_on_path()
     from ponderTTT.models import Gemma3Config, TTTConfig, TTTGemma3Model, create_sharded_flash_attention
-    from ponderTTT.models import load_gemma3_weights_from_checkpoint
+    from ponderTTT.models import download_gemma3_from_kaggle, load_gemma3_weights_from_checkpoint
 
-    weights_dir = _repo_root() / args.weights_dir
-    checkpoint_path: Path | None = Path(args.checkpoint).expanduser() if args.checkpoint else None
+    checkpoint_path: str | None = args.checkpoint
 
     if checkpoint_path is None:
         if args.kaggle_model is None and args.kaggle_dataset is None:
             raise ValueError("Pass --checkpoint or one of --kaggle-model/--kaggle-dataset")
 
-        kind, handle = ("models", args.kaggle_model) if args.kaggle_model else ("datasets", args.kaggle_dataset)
-        _kaggle_download(
-            kind=kind,
-            handle=handle,  # type: ignore[arg-type]
-            out_dir=weights_dir,
-            file=args.kaggle_file,
-            force=args.force_download,
-        )
-        _maybe_extract_archives(weights_dir)
-        patterns = [p.strip() for p in args.checkpoint_glob.split(",") if p.strip()]
-        checkpoint_path = _resolve_checkpoint(weights_dir, patterns)
+        if args.kaggle_model is not None:
+            checkpoint_path = download_gemma3_from_kaggle(
+                args.kaggle_model,
+                kind="model",
+                path=args.kaggle_file,
+                force_download=args.force_download,
+            )
+        else:
+            checkpoint_path = download_gemma3_from_kaggle(
+                args.kaggle_dataset,
+                kind="dataset",
+                path=args.kaggle_file,
+                force_download=args.force_download,
+            )
 
-    if not checkpoint_path.exists():
+    if not Path(checkpoint_path).exists():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
     cfg_map = {
