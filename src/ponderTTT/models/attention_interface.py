@@ -18,14 +18,17 @@ def sharded_flash_attention(
     causal: bool = True,
     sm_scale: Optional[float] = None,
     vmem_limit_bytes: int | None = None,
+    *,
+    data_axis: str = "data",
+    model_axis: str = "model",
 ) -> Callable[..., Any]:
     in_specs = (
-        P("data", "model", None, None),  # q
-        P("data", "model", None, None),  # k
-        P("data", "model", None, None),  # v
+        P(data_axis, model_axis, None, None),  # q
+        P(data_axis, model_axis, None, None),  # k
+        P(data_axis, model_axis, None, None),  # v
         P(),  # segment_ids
     )
-    out_specs = P("data", "model", None, None)
+    out_specs = P(data_axis, model_axis, None, None)
 
     def _flash_attention(q, k, v, segment_ids):
         return flash_attention(q,

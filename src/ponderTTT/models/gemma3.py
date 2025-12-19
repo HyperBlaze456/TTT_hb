@@ -875,6 +875,9 @@ def create_sharded_flash_attention(
     mesh: Mesh,
     config: Gemma3Config,
     causal: bool = True,
+    *,
+    data_axis: str = "data",
+    model_axis: str = "model",
 ) -> callable:
     """Create a sharded flash attention function for use with Gemma 3."""
     sm_scale = 1.0 / math.sqrt(config.head_dim)
@@ -885,4 +888,6 @@ def create_sharded_flash_attention(
         mesh=mesh,
         causal=causal,
         sm_scale=sm_scale,
+        data_axis=data_axis,
+        model_axis=model_axis,
     )
