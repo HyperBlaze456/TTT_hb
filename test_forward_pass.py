@@ -12,12 +12,14 @@ Usage:
 """
 
 import argparse
+import time
 from functools import partial
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 from flax import nnx
+from flax.nnx import spmd as nnx_spmd
 from jax.sharding import Mesh, NamedSharding, PartitionSpec as P
 
 from src.ponderTTT.models.gemma3 import (
@@ -117,9 +119,10 @@ def test_forward_pass(
     print(f"  vocab_size: {config.vocab_size}")
 
     # Initialize model with random weights (sharded if mesh provided)
+    # Use Flax NNX's spmd mesh context for proper variable sharding
     print("\nInitializing model with random weights...")
     if mesh is not None:
-        with mesh:
+        with nnx_spmd.mesh(mesh):
             model = create_gemma3_model(config=config, mesh=mesh, seed=42)
     else:
         model = create_gemma3_model(config=config, seed=42)
@@ -145,7 +148,7 @@ def test_forward_pass(
     # Run forward pass
     print("\nRunning forward pass (first call includes JIT compilation)...")
     if mesh is not None:
-        with mesh:
+        with nnx_spmd.mesh(mesh):
             logits = forward_fn(model, input_ids)
     else:
         logits = forward_fn(model, input_ids)
@@ -184,10 +187,9 @@ def test_forward_pass(
 
     # Run a second time to measure steady-state performance
     print("\nRunning forward pass again (steady-state, no compilation)...")
-    import time
     start = time.perf_counter()
     if mesh is not None:
-        with mesh:
+        with nnx_spmd.mesh(mesh):
             logits2 = forward_fn(model, input_ids)
     else:
         logits2 = forward_fn(model, input_ids)
