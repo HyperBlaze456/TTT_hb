@@ -29,7 +29,7 @@ class AttentionType(enum.Enum):
     LOCAL_SLIDING = 2
 
 
-@dataclass
+@dataclass # maybe freeze for jit
 class Gemma3Config:
     """Configuration for Gemma 3 model."""
     # Model architecture
@@ -164,9 +164,9 @@ def precompute_freqs_cis(
 
     Returns complex exponentials for RoPE: e^(i * theta * position).
     """
-    inv_freq = 1.0 / (base ** (jnp.arange(0, head_dim, 2, dtype=jnp.float32) / head_dim))
+    inv_freq = 1.0 / (base ** (jnp.arange(0, head_dim, 2, dtype=dtype) / head_dim))
     inv_freq = inv_freq / scaling_factor
-    positions = jnp.arange(max_seq_len, dtype=jnp.float32)
+    positions = jnp.arange(max_seq_len, dtype=dtype)
     freqs = jnp.outer(positions, inv_freq)
     freqs_cis = jnp.exp(1j * freqs).astype(jnp.complex64)
     return freqs_cis
