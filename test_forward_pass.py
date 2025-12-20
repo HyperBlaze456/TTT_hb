@@ -25,6 +25,7 @@ from src.ponderTTT.models.gemma3 import (
     create_gemma3_model,
 )
 
+jax.distributed.initialize()
 
 def create_mesh(data_axis: str = "data", model_axis: str = "model") -> Mesh:
     """Create a 2D mesh for FSDP + TP on available devices.
