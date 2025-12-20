@@ -16,6 +16,7 @@ from functools import partial
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 from flax import nnx
 from jax.sharding import Mesh, NamedSharding, PartitionSpec as P
 
@@ -60,7 +61,7 @@ def create_mesh(data_axis: str = "data", model_axis: str = "model") -> Mesh:
     print(f"Creating mesh: {data_parallel}x{model_parallel} "
           f"(data_parallel x model_parallel) on {num_devices} devices")
 
-    device_array = jnp.array(devices).reshape(data_parallel, model_parallel)
+    device_array = np.array(devices).reshape(data_parallel, model_parallel)
     mesh = Mesh(device_array, axis_names=(data_axis, model_axis))
 
     return mesh
