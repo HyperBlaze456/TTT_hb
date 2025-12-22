@@ -19,7 +19,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from flax import nnx
-from flax.nnx import spmd as nnx_spmd
 from jax.sharding import Mesh, NamedSharding, PartitionSpec as P
 
 from src.ponderTTT.models.gemma3 import (
@@ -63,10 +62,63 @@ def create_mesh(data_axis: str = "data", model_axis: str = "model") -> Mesh:
     print(f"Creating mesh: {data_parallel}x{model_parallel} "
           f"(data_parallel x model_parallel) on {num_devices} devices")
 
-    device_array = np.array(devices).reshape(data_parallel, model_parallel)
+    mesh_shape = (data_parallel, model_parallel)
+    try:
+        from jax.experimental import mesh_utils
+
+        device_array = mesh_utils.create_device_mesh(mesh_shape)
+    except Exception:
+        device_array = np.array(devices).reshape(mesh_shape)
     mesh = Mesh(device_array, axis_names=(data_axis, model_axis))
 
     return mesh
+
+
+def shard_input_ids(
+    input_ids: np.ndarray,
+    mesh: Mesh,
+    *,
+    data_axis: str = "data",
+) -> jax.Array:
+    """Create a global sharded array from host input for multi-host safety."""
+    input_sharding = NamedSharding(mesh, P(data_axis, None))
+    data_axis_size = mesh.shape[data_axis]
+    if input_ids.shape[0] % data_axis_size != 0:
+        raise ValueError(
+            f"batch_size ({input_ids.shape[0]}) must be divisible by "
+            f"data axis size ({data_axis_size})."
+        )
+    if jax.process_count() == 1:
+        return jax.device_put(input_ids, input_sharding)
+
+    if not hasattr(jax, "make_array_from_single_device_arrays"):
+        raise RuntimeError(
+            "Multi-host sharding requires jax.make_array_from_single_device_arrays "
+            "but it is missing in this JAX version."
+        )
+
+    shard_size = input_ids.shape[0] // data_axis_size
+    device_to_data_index = {}
+    mesh_devices = np.array(mesh.devices)
+    for data_idx in range(mesh_devices.shape[0]):
+        for model_idx in range(mesh_devices.shape[1]):
+            device_to_data_index[mesh_devices[data_idx, model_idx]] = data_idx
+
+    local_devices = (
+        input_sharding.addressable_devices
+        if hasattr(input_sharding, "addressable_devices")
+        else jax.local_devices()
+    )
+    local_arrays = []
+    for device in local_devices:
+        data_idx = device_to_data_index[device]
+        batch_slice = slice(data_idx * shard_size, (data_idx + 1) * shard_size)
+        shard = input_ids[batch_slice, :]
+        local_arrays.append(jax.device_put(shard, device))
+
+    return jax.make_array_from_single_device_arrays(
+        input_ids.shape, input_sharding, local_arrays
+    )
 
 
 def get_config(model_size: str) -> Gemma3Config:
@@ -119,10 +171,9 @@ def test_forward_pass(
     print(f"  vocab_size: {config.vocab_size}")
 
     # Initialize model with random weights (sharded if mesh provided)
-    # Use Flax NNX's spmd mesh context for proper variable sharding
     print("\nInitializing model with random weights...")
     if mesh is not None:
-        with nnx_spmd.mesh(mesh):
+        with mesh:
             model = create_gemma3_model(config=config, mesh=mesh, seed=42)
     else:
         model = create_gemma3_model(config=config, seed=42)
@@ -130,13 +181,14 @@ def test_forward_pass(
 
     # Create batched dummy input
     print(f"\nCreating batched input: batch_size={batch_size}, seq_len={seq_len}")
-    input_ids = jnp.ones((batch_size, seq_len), dtype=jnp.int32)
+    input_ids = np.ones((batch_size, seq_len), dtype=np.int32)
 
     # Shard input data across data axis if using mesh
     if mesh is not None:
-        input_sharding = NamedSharding(mesh, P("data", None))
-        input_ids = jax.device_put(input_ids, input_sharding)
+        input_ids = shard_input_ids(input_ids, mesh)
         print(f"Input sharded across 'data' axis")
+    else:
+        input_ids = jnp.asarray(input_ids)
 
     print(f"Input shape: {input_ids.shape}")
 
@@ -148,7 +200,7 @@ def test_forward_pass(
     # Run forward pass
     print("\nRunning forward pass (first call includes JIT compilation)...")
     if mesh is not None:
-        with nnx_spmd.mesh(mesh):
+        with mesh:
             logits = forward_fn(model, input_ids)
     else:
         logits = forward_fn(model, input_ids)
@@ -189,7 +241,7 @@ def test_forward_pass(
     print("\nRunning forward pass again (steady-state, no compilation)...")
     start = time.perf_counter()
     if mesh is not None:
-        with nnx_spmd.mesh(mesh):
+        with mesh:
             logits2 = forward_fn(model, input_ids)
     else:
         logits2 = forward_fn(model, input_ids)
