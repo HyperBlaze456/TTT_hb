@@ -17,8 +17,7 @@ from typing import Callable
 import jax
 import jax.numpy as jnp
 from flax import nnx
-from jax.sharding import Mesh, NamedSharding
-from jax.sharding import PartitionSpec as P
+from jax.sharding import Mesh
 
 from .attention_interface import sharded_flash_attention
 
@@ -143,14 +142,14 @@ def sharded_init(
     Args:
         init_fn: The initializer function
         sharding: Partition spec tuple like (None, 'model') or None for no sharding
-        mesh: JAX mesh for distributed computing
+        mesh: JAX mesh for distributed computing (used to determine if sharding is enabled)
 
     Returns:
         Sharded initializer if mesh is provided, otherwise original initializer
     """
     if mesh is None or sharding is None:
         return init_fn
-    return nnx.with_partitioning(init_fn, NamedSharding(mesh, P(*sharding)))
+    return nnx.with_partitioning(init_fn, sharding)
 
 
 def precompute_freqs_cis(

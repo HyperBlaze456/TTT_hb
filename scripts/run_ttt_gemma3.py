@@ -25,7 +25,7 @@ from ponderTTT.models import Gemma3Config, TTTConfig, TTTGemma3Model
 
 jax.distributed.initialize()
 
-gemma_cfg = Gemma3Config.gemma3_4b()
+gemma_cfg = Gemma3Config.gemma3_27b()
 ttt_cfg = TTTConfig(adapter_dim=256, use_norm=True)
 rngs = nnx.Rngs(0)
 
@@ -47,10 +47,14 @@ def train_step(model, optimizer, x, y):
 
 def main():
     nnx.use_eager_sharding(True)
-    # Create 4x4 mesh
-    devices = np.array(jax.devices()).reshape(4, 4)
+    # HSDP mesh: (hosts, devices_per_host) = (4, 4)
+    # - "data" axis (DCN): 4 hosts, used for data parallelism
+    # - "model" axis (ICI): 4 devices per host, used for FSDP
+    num_hosts = jax.process_count()
+    devices_per_host = len(jax.local_devices())
+    devices = np.array(jax.devices()).reshape(num_hosts, devices_per_host)
     mesh = Mesh(devices, axis_names=("data", "model"))
-    print(f"Created mesh: {mesh}")
+    print(f"Created HSDP mesh: {mesh} (hosts={num_hosts}, devices_per_host={devices_per_host})")
     batch_sharding = NamedSharding(mesh, P("data", None))
 
     model = TTTGemma3Model(
@@ -63,9 +67,9 @@ def main():
         optimizer = nnx.Optimizer(model, optax.adamw(1e-4), wrt=nnx.Param)
 
         model = force_shard_state(model, mesh)
-        optimizer = force_shard_state(optimizer, mesh, state_filter=nnx.optimier.OptState)
+        optimizer = force_shard_state(optimizer, mesh, state_filter=nnx.optimizer.OptState)
 
-        global_batch = 64
+        global_batch = 16  # Reduced for 27B model
 
         per_process = global_batch // jax.process_count()
         seq_len = 128
