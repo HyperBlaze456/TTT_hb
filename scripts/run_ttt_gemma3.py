@@ -66,10 +66,12 @@ def main():
             mesh=mesh,
             rngs=rngs,
         )
+        print("Model was initialized")
         optimizer = nnx.Optimizer(model, optax.adamw(1e-4), wrt=nnx.Param)
-
+        print("Optimizer was initialized")
         model = force_shard_state(model, mesh)
         optimizer = force_shard_state(optimizer, mesh, state_filter=nnx.optimizer.OptState)
+        print("Starting training...")
 
         global_batch = 16  # Reduced for 27B model
 
