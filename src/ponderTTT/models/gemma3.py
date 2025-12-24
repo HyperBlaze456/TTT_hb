@@ -148,6 +148,8 @@ def sharded_init(
         Sharded initializer if mesh is provided, otherwise original initializer
     """
     if mesh is None or sharding is None:
+        if jax.process_index() == 0:
+            print("Sharding is disabled")
         return init_fn
     return nnx.with_partitioning(init_fn, sharding)
 
