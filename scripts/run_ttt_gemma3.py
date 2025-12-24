@@ -57,13 +57,13 @@ def main():
     print(f"Created HSDP mesh: {mesh} (hosts={num_hosts}, devices_per_host={devices_per_host})")
     batch_sharding = NamedSharding(mesh, P("data", None))
 
-    model = TTTGemma3Model(
-        gemma_cfg,
-        ttt_cfg,
-        mesh=mesh,
-        rngs=rngs,
-    )
     with jax.set_mesh(mesh):
+        model = TTTGemma3Model(
+            gemma_cfg,
+            ttt_cfg,
+            mesh=mesh,
+            rngs=rngs,
+        )
         optimizer = nnx.Optimizer(model, optax.adamw(1e-4), wrt=nnx.Param)
 
         model = force_shard_state(model, mesh)
