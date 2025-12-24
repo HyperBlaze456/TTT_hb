@@ -36,7 +36,6 @@ class TTTAdapter(nnx.Module):
         self.adapter_dim = adapter_dim
         self.dtype = dtype
 
-        self.norm = None
         if use_norm:
             self.norm = RMSNorm(
                 num_features=hidden_size,
@@ -47,6 +46,8 @@ class TTTAdapter(nnx.Module):
                 mesh=mesh,
                 rngs=rngs,
             )
+        else:
+            self.norm = None
 
         self.down_proj = nnx.Linear(
             in_features=hidden_size,
