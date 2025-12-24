@@ -31,10 +31,12 @@ class Model(nnx.Module):
         return self.l2(nnx.relu(self.l1(x)))
 
 def force_shard_state(obj, mesh, *, state_filter=None):
-    st = nnx.state(obj) if state_filter is None else nnx.state(obj, state_filter)
-    shardings = nnx.get_named_sharding(st, mesh)
-    st = jax.lax.with_sharding_constraint(st, shardings)
-    nnx.update(obj, st)
+    state = nnx.state(obj)
+    if state_filter is not None:
+        state = nnx.filter_state(state, state_filter)
+    shardings = nnx.get_named_sharding(state, mesh)
+    state = jax.lax.with_sharding_constraint(state, shardings)
+    nnx.update(obj, state)
     return obj
 
 @nnx.jit(donate_argnames=("model", "optimizer"))

@@ -30,7 +30,9 @@ ttt_cfg = TTTConfig(adapter_dim=256, use_norm=True)
 rngs = nnx.Rngs(0)
 
 def force_shard_state(obj, mesh, *, state_filter=None):
-    state = nnx.state(obj) if state_filter is None else nnx.state(obj, state_filter=state_filter)
+    state = nnx.state(obj)
+    if state_filter is not None:
+        state = nnx.filter_state(state, state_filter)
     shardings = nnx.get_named_sharding(state, mesh)
     state = jax.lax.with_sharding_constraint(state, shardings) # try using nnx.with_sharding_constraint later on
     nnx.update(obj, state)
