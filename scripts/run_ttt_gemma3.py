@@ -25,7 +25,7 @@ from ponderTTT.models import Gemma3Config, TTTConfig, TTTGemma3Model
 
 jax.distributed.initialize()
 
-gemma_cfg = Gemma3Config.gemma3_12b()
+gemma_cfg = Gemma3Config.gemma3_4b()
 ttt_cfg = TTTConfig(adapter_dim=256, use_norm=True)
 rngs = nnx.Rngs(0)
 
