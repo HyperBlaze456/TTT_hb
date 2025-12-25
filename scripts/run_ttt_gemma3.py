@@ -1,17 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import os
-import sys
-from pathlib import Path
-
 import numpy as np
-
-src = Path(__file__).resolve().parents[1] / "src"
-if str(src) not in sys.path:
-    sys.path.insert(0, str(src))
-
-os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 
 import jax
 import jax.numpy as jnp
