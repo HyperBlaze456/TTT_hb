@@ -10,7 +10,7 @@ from jax.sharding import Mesh
 from flax import nnx
 import optax
 
-from ponderTTT.models import Gemma3Config, TTTConfig, TTTGemma3Model
+from src.ponderTTT.models import Gemma3Config, TTTConfig, TTTGemma3Model
 
 
 def force_shard_state(obj, mesh, *, state_filter=None):
