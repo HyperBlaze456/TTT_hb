@@ -23,12 +23,6 @@ import optax
 from ponderTTT.models import Gemma3Config, TTTConfig, TTTGemma3Model
 
 
-jax.distributed.initialize()
-
-gemma_cfg = Gemma3Config.gemma3_4b()
-ttt_cfg = TTTConfig(adapter_dim=256, use_norm=True)
-rngs = nnx.Rngs(0)
-
 def force_shard_state(obj, mesh, *, state_filter=None):
     state = nnx.state(obj)
     if state_filter is not None:
@@ -48,10 +42,13 @@ def train_step(model, optimizer, x, y):
     return loss
 
 def main():
+    jax.distributed.initialize()
+    print("Multihost ready")
+    gemma_cfg = Gemma3Config.gemma3_4b()
+    ttt_cfg = TTTConfig(adapter_dim=256, use_norm=True)
+    rngs = nnx.Rngs(0)
+    print("configs are up")
     nnx.use_eager_sharding(True)
-    # HSDP mesh: (hosts, devices_per_host) = (4, 4)
-    # - "data" axis (DCN): 4 hosts, used for data parallelism
-    # - "model" axis (ICI): 4 devices per host, used for FSDP
     num_hosts = jax.process_count()
     devices_per_host = len(jax.local_devices())
     devices = np.array(jax.devices()).reshape(num_hosts, devices_per_host)
